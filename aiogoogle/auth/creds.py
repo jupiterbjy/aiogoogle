@@ -139,7 +139,19 @@ class IdToken(_dict):
             * The hosted G Suite domain of the user. Provided only if the user belongs to a hosted domain.
     """
 
-    pass
+    iss: str
+    at_hash: str
+    email_verified: bool
+    sub: str
+    azp: str
+    email: str
+    profile: str
+    picture: str
+    name: str
+    aud: str
+    iat: str
+    nonce: str
+    hd: str
 
 
 class UserCreds(_dict):

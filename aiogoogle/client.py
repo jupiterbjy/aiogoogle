@@ -1,10 +1,14 @@
 __all__ = ["Aiogoogle"]
 
+from typing import Union, Type
+from collections.abc import Mapping
 
 from .resource import GoogleAPI
 from .auth.managers import Oauth2Manager, ApiKeyManager, OpenIdConnectManager, ServiceAccountManager
 from .sessions.aiohttp_session import AiohttpSession
 from .data import DISCOVERY_SERVICE_V1_DISCOVERY_DOC
+from .sessions.abc import AbstractSession
+from .auth.creds import ClientCreds, UserCreds, ServiceAccountCreds, ApiKey
 
 
 # Discovery doc reference https://developers.google.com/discovery/v1/reference/apis
@@ -20,36 +24,36 @@ class Aiogoogle:
         2. Aiogoogle's OAuth2 manager
         3. Aiogoogle's API key manager
         4. Aiogoogle's OpenID Connect manager
-        5. Aiogoogle's service account manager 
+        5. Aiogoogle's service account manager
         6. One of Aiogoogle's implementations of a session object
 
     Arguments:
 
         session_factory (aiogoogle.sessions.abc.AbstractSession): AbstractSession Implementation. Defaults to ``aiogoogle.sessions.aiohttp_session.AiohttpSession``
 
-        api_key (aiogoogle.auth.creds.ApiKey): Google API key
-        
-        user_creds (aiogoogle.auth.creds.UserCreds): OAuth2 cser credentials 
+        api_key (aiogoogle.auth.creds.ApiKey | str): Google API key
 
-        client_creds (aiogoogle.auth.creds.ClientCreds): OAuth2 client credentials
+        user_creds (aiogoogle.auth.creds.UserCreds | Mapping): OAuth2 cser credentials
 
-        service_account_creds (aiogoogle.auth.creds.ServiceAccountCreds): Service account credentials
-        
-    Note: 
-    
+        client_creds (aiogoogle.auth.creds.ClientCreds | Mapping): OAuth2 client credentials
+
+        service_account_creds (aiogoogle.auth.creds.ServiceAccountCreds | Mapping): Service account credentials
+
+    Note:
+
         In case you want to instantiate a custom session with initial parameters, you can pass an anonymous factory. e.g. ::
-        
+
             >>> sess = lambda: Session(your_custome_arg, your_custom_kwarg=True)
             >>> aiogoogle = Aiogoogle(session_factory=sess)
     """
 
     def __init__(
         self,
-        session_factory=AiohttpSession,
-        api_key=None,
-        user_creds=None,
-        client_creds=None,
-        service_account_creds=None,
+        session_factory: Type[AbstractSession] = AiohttpSession,
+        api_key: Union[ApiKey, str] = None,
+        user_creds: Union[UserCreds, Mapping] = None,
+        client_creds: Union[ClientCreds, Mapping] = None,
+        service_account_creds: Union[ServiceAccountCreds, Mapping] = None,
     ):
 
         self.session_factory = session_factory

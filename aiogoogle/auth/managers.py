@@ -9,6 +9,7 @@
 __all__ = ["ApiKeyManager", "Oauth2Manager", "OpenIdConnectManager", "ServiceAccountManager"]
 
 from urllib import parse
+from typing import Mapping, Union, Type
 import os
 
 try:
@@ -20,12 +21,12 @@ from google.oauth2 import service_account
 from google.auth.environment_vars import GCE_METADATA_IP
 
 from .utils import _get_expires_at, _is_expired
-from .creds import UserCreds
+from .creds import UserCreds, ClientCreds, ServiceAccountCreds
 from .data import OAUTH2_V2_DISCVOCERY_DOC, WELLKNOWN_OPENID_CONFIGS
 from ..excs import AuthError
 from ..models import Request
-from ..resource import GoogleAPI
-from ..sessions.aiohttp_session import AiohttpSession
+from ..resource import GoogleAPI, Method
+from ..sessions.aiohttp_session import AiohttpSession, AbstractSession
 
 
 # ID token contents: https://openid.net/specs/openid-connect-core-1_0.html#IDToken
@@ -107,7 +108,7 @@ class ApiKeyManager:
 
                 Request to authorize
 
-            creds (aiogoogle.auth.creds.ApiKey):
+            key (aiogoogle.auth.creds.ApiKey | str):
 
                 ApiKey to refresh with
 
@@ -139,10 +140,14 @@ class Oauth2Manager:
 
         session_factory (aiogoogle.sessions.AbstractSession): A session implementation
 
-        verify (bool): whether or not to verify tokens fetched
+        client_creds (aiogoogle.auth.creds.ClientCreds): whether or not to verify tokens fetched
 
     """
-    def __init__(self, session_factory=AiohttpSession, client_creds=None):
+    def __init__(
+        self,
+        session_factory: Type[AbstractSession] = AiohttpSession,
+        client_creds: Union[ClientCreds, Mapping] = None
+    ):
         self.oauth2_api = GoogleAPI(OAUTH2_V2_DISCVOCERY_DOC)
         self.openid_configs = WELLKNOWN_OPENID_CONFIGS
         self.session_factory = session_factory
@@ -156,9 +161,9 @@ class Oauth2Manager:
         Example:
 
             * response_types_supported
-            
+
             * scopes_supported
-            
+
             * claims_supported
         """
         try:
@@ -190,13 +195,13 @@ class Oauth2Manager:
 
         Unless this test is failing:
 
-        aiogoogle.tests.integ_online.latest_test_latest_openid_configs(), You shouldn't really need to use this. 
+        aiogoogle.tests.integ_online.latest_test_latest_openid_configs(), You shouldn't really need to use this.
         """
         req = Request("GET", url=OPENID_CONFIGS_DISCOVERY_DOC_URL)
         self.openid_configs = await self._send_request(req)
 
     @staticmethod
-    def authorize(request: Request, user_creds: dict) -> Request:
+    def authorize(request: Request, user_creds: Union[UserCreds, Mapping]) -> Request:
         """
         Adds OAuth2 authorization headers to requests given user creds
 
@@ -206,7 +211,7 @@ class Oauth2Manager:
 
                 Request to authorize
 
-            user_creds (aiogoogle.auth.creds.UserCreds):
+            user_creds (aiogoogle.auth.creds.UserCreds | Mapping):
 
                 user_creds to refresh with
 
@@ -219,17 +224,17 @@ class Oauth2Manager:
         request.headers["Authorization"] = f'Bearer {user_creds["access_token"]}'
         return request
 
-    def is_ready(self, client_creds=None):
+    def is_ready(self, client_creds: Union[UserCreds, Mapping] = None) -> bool:
         """
         Checks passed ``client_creds`` whether or not the client has enough information to perform OAuth2 Authorization code flow
 
         Arguments:
 
-            client_creds(aiogoogle.auth.creds.ClientCreds): Client credentials object
+            client_creds(aiogoogle.auth.creds.ClientCreds | Mapping): Client credentials object
 
         Returns:
 
-            bool: 
+            bool: boolean
         """
         client_creds = client_creds or self.client_creds
         if (
@@ -252,8 +257,8 @@ class Oauth2Manager:
         prompt=None,
         response_type=AUTH_CODE_RESPONSE_TYPE,
         scopes=None,
-    ) -> (str):
-        """ 
+    ) -> str:
+        """
         First step of OAuth2 authoriztion code flow. Creates an OAuth2 authorization URI.
 
         Arguments:
@@ -271,27 +276,27 @@ class Oauth2Manager:
                 * Optional
 
                 * Overrides the list of scopes specified in client creds
-            
+
             state (str): A CSRF token
 
                 * Optional
 
                 * Specifies any string value that your application uses to maintain state between your authorization request and the authorization server's response.
-                
+
                 * The server returns the exact value that you send as a name=value pair in the hash (#) fragment of the redirect_uri after the user consents to or denies your application's access request.
 
                 * You can use this parameter for several purposes, such as:
-                
+
                     * Directing the user to the correct resource in your application
-                    
+
                     * Sending nonces
-                    
+
                     * Mitigating cross-site request forgery.
 
                 * If no state is passed, this method will generate and add a secret token to ``user_creds['state']``.
-                    
+
                 * Since your redirect_uri can be guessed, using a state value can increase your assurance that an incoming connection is the result of an authentication request.
-                
+
                 * If you generate a random string or encode the hash of a cookie or another value that captures the client's state, you can validate the response to additionally ensure that the request and response originated in the same browser, providing protection against attacks such as cross-site request forgery.
 
             access_type (str): Indicates whether your application can refresh access tokens when the user is not present at the browser. Options:
@@ -303,33 +308,33 @@ class Oauth2Manager:
                 * ``"offline"`` Choose this for a refresheable/long-term access token
 
             include_granted_scopes (bool):
-            
+
                 * Optional
 
                 * Enables applications to use incremental authorization to request access to additional scopes in context.
-                
+
                 * If you set this parameter's value to ``True`` and the authorization request is granted, then the new access token will also cover any scopes to which the user previously granted the application access.
 
             login_hint (str):
-            
+
                 * Optional
-                
+
                 * If your application knows which user is trying to authenticate, it can use this parameter to provide a hint to the Google Authentication Server.
-                
+
                 * The server uses the hint to simplify the login flow either by prefilling the email field in the sign-in form or by selecting the appropriate multi-login session.
 
                 * Set the parameter value to an email address or sub identifier, which is equivalent to the user's Google ID.
-                
+
                 * This can help you avoid problems that occur if your app logs in the wrong user account.
 
             prompt (str):
 
                 * Optional
-                
+
                 * A space-delimited, case-sensitive list of prompts to present the user.
-                
+
                 * If you don't specify this parameter, the user will be prompted only the first time your app requests access.
-                
+
                 * Possible values are:
 
                     * ``None`` : Default: Do not display any authentication or consent screens. Must not be specified with other values.
@@ -359,19 +364,19 @@ class Oauth2Manager:
             * For a list of all of Google's available scopes: https://developers.google.com/identity/protocols/googlescopes
 
             * It is recommended that your application requests access to authorization scopes in context whenever possible.
-            
+
             * By requesting access to user data in context, via incremental authorization, you help users to more easily understand why your application needs the access it is requesting.
 
         Warning:
 
             * When listening for a callback after redirecting a user to the URL returned from this method, take the following into consideration:
-            
+
                 * If your response endpoint renders an HTML page, any resources on that page will be able to see the authorization code in the URL.
-                
+
                 * Scripts can read the URL directly, and the URL in the Referer HTTP header may be sent to any or all resources on the page.
 
                 * Carefully consider whether you want to send authorization credentials to all resources on that page (especially third-party scripts such as social plugins and analytics).
-                
+
                 * To avoid this issue, it's recommend that the server first handle the request, then redirect to another URL that doesn't include the response parameters.
 
         Example:
@@ -400,7 +405,7 @@ class Oauth2Manager:
 
         Returns:
 
-            (str): An Authorization URI
+            str: An Authorization URI
         """
         client_creds = client_creds or self.client_creds
         scopes = " ".join(scopes or client_creds["scopes"])
@@ -431,9 +436,9 @@ class Oauth2Manager:
         Arguments:
 
             grant (str):
-            
-                * Aka: "code". 
-                
+
+                * Aka: "code".
+
                 * The code received at your redirect URI from the auth callback
 
             client_creds (aiogoogle.auth.creds.ClientCreds):
@@ -501,12 +506,15 @@ class Oauth2Manager:
         return user_creds
 
     @staticmethod
-    def authorized_for_method(method, user_creds) -> bool:
+    def authorized_for_method(
+        method: Method,
+        user_creds: Union[UserCreds, Mapping]
+    ) -> bool:
         """
         Checks if oauth2 user_creds dict has sufficient scopes for a method call.
-        
-        .. note:: 
-        
+
+        .. note::
+
             This method doesn't check whether creds are refreshed or valid.
 
         e.g.
@@ -514,9 +522,9 @@ class Oauth2Manager:
             **Correct:**
 
             .. code-block:: python3
-        
+
                 is_authorized = authorized_for_method(youtube.video.list)
-            
+
             **NOT correct:**
 
             .. code-block:: python3
@@ -534,7 +542,7 @@ class Oauth2Manager:
 
             method (aiogoogle.resource.Method): Method to be checked
 
-            user_credentials (aiogoogle.auth.creds.UserCreds): User Credentials with scopes item
+            user_creds (aiogoogle.auth.creds.UserCreds | Mapping): User Credentials with scopes item
 
         Returns:
 
@@ -595,7 +603,7 @@ class Oauth2Manager:
         Checks if user_creds expired
 
         Arguments:
-        
+
             user_creds (aiogoogle.auth.creds.UserCreds): User Credentials
 
         Returns:
@@ -605,15 +613,19 @@ class Oauth2Manager:
         """
         return _is_expired(creds["expires_at"])
 
-    async def refresh(self, user_creds, client_creds=None):
+    async def refresh(
+        self,
+        user_creds: Union[UserCreds, Mapping],
+        client_creds: Union[ClientCreds, Mapping] = None
+    ) -> UserCreds:
         """
         Refreshes user_creds
-        
+
         Arguments:
 
-            user_creds (aiogoogle.auth.creds.UserCreds): User Credentials with ``refresh_token`` item
+            user_creds (aiogoogle.auth.creds.UserCreds | Mapping): User Credentials with ``refresh_token`` item
 
-            client_creds (aiogoogle.auth.creds.ClientCreds): Client Credentials
+            client_creds (aiogoogle.auth.creds.ClientCreds | Mapping): Client Credentials
 
         Returns:
 
@@ -650,7 +662,10 @@ class Oauth2Manager:
             data=dict(token=user_creds["access_token"]),
         )
 
-    async def revoke(self, user_creds):
+    async def revoke(
+        self,
+        user_creds: Union[UserCreds, Mapping]
+    ):
         """
         Revokes user_creds
 
@@ -661,7 +676,7 @@ class Oauth2Manager:
 
         Arguments:
 
-            user_creds (aiogoogle.auth.Creds): UserCreds with an ``access_token`` item
+            user_creds (aiogoogle.auth.UserCreds): UserCreds with an ``access_token`` item
 
         Returns:
 
@@ -678,25 +693,26 @@ class Oauth2Manager:
 class OpenIdConnectManager(Oauth2Manager):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Should it explicitly copy parent's signature?
 
     async def get_user_info(self, user_creds):
         """
         https://developers.google.com/+/web/api/rest/openidconnect/getOpenIdConnect
-    
+
         People: getOpenIdConnect
-    
+
         Get user information after performing an OpenID connect flow.
-    
+
         Use this method instead of people.get (Google+ API) when you need the OpenID Connect format.
-    
-        This method is not discoverable nor is it in the Google API client libraries. 
-        
+
+        This method is not discoverable nor is it in the Google API client libraries.
+
         To learn more, see OpenID Connect for sign-in. https://developers.google.com/+/web/api/rest/openidconnect/index.html
-    
+
         Example:
-    
+
             ::
-    
+
                 >>> await get_user_info(user_creds)
                 {
                     "kind": "plus#personOpenIdConnect",
@@ -723,13 +739,13 @@ class OpenIdConnectManager(Oauth2Manager):
 
     async def get_token_info_jwt(self, user_creds):
         """ get token info using id_token_jwt instead of access_token ``self.get_token_info``
-        
+
         Arguments:
-        
+
             user_creds (aiogoogle.auth.creds.UserCreds): user_creds with id_token_jwt item
-            
+
         Returns:
-        
+
             dict: Information about the token
         """
         req = self.oauth2_api.tokeninfo(id_token=user_creds.get("id_token_jwt"))
@@ -745,7 +761,7 @@ class OpenIdConnectManager(Oauth2Manager):
 
     def authorization_url(
         self,
-        client_creds=None,
+        client_creds: Union[ClientCreds, Mapping] = None,
         nonce=None,
         state=None,
         prompt=None,
@@ -758,12 +774,12 @@ class OpenIdConnectManager(Oauth2Manager):
         response_type=AUTH_CODE_RESPONSE_TYPE,
         scopes=None,
     ):
-        """ 
+        """
         First step of OAuth2 authoriztion code flow. Creates an OAuth2 authorization URI.
 
         Arguments:
 
-            client_creds (aiogoogle.auth.creds.ClientCreds):  A client_creds object/dictionary containing the following items:
+            client_creds (aiogoogle.auth.creds.ClientCreds | Mapping):  A client_creds object/dictionary containing the following items:
 
                 * client_id
 
@@ -788,15 +804,15 @@ class OpenIdConnectManager(Oauth2Manager):
                 * Optional
 
                 * An ASCII string value for specifying how the authorization server displays the authentication and consent user interface pages.
-                
+
                 * The following values are specified, and accepted by the Google servers, but do not have any effect on its behavior:
-                
+
                     * ``page``
-                    
+
                     * ``popup``
-                    
+
                     * ``touch``
-                    
+
                     * ``wap``
 
             state (str): A CSRF token
@@ -804,21 +820,21 @@ class OpenIdConnectManager(Oauth2Manager):
                 * Optional
 
                 * Specifies any string value that your application uses to maintain state between your authorization request and the authorization server's response.
-                
+
                 * The server returns the exact value that you send as a name=value pair in the hash (#) fragment of the redirect_uri after the user consents to or denies your application's access request.
 
                 * You can use this parameter for several purposes, such as:
-                
+
                     * Directing the user to the correct resource in your application
-                    
+
                     * Sending nonces
-                    
+
                     * Mitigating cross-site request forgery.
 
                 * If no state is passed, this method will generate and add a secret token to ``user_creds['state']``.
-                    
+
                 * Since your redirect_uri can be guessed, using a state value can increase your assurance that an incoming connection is the result of an authentication request.
-                
+
                 * If you generate a random string or encode the hash of a cookie or another value that captures the client's state, you can validate the response to additionally ensure that the request and response originated in the same browser, providing protection against attacks such as cross-site request forgery.
 
             access_type (str): Indicates whether your application can refresh access tokens when the user is not present at the browser. Options:
@@ -830,19 +846,19 @@ class OpenIdConnectManager(Oauth2Manager):
                 * ``"offline"`` Choose this for a refresheable/long-term access token
 
             include_granted_scopes (bool):
-            
+
                 * Optional
 
                 * Enables applications to use incremental authorization to request access to additional scopes in context.
-                
+
                 * If you set this parameter's value to ``True`` and the authorization request is granted, then the new access token will also cover any scopes to which the user previously granted the application access.
 
             login_hint (str):
-            
+
                 * Optional
-                
+
                 * If your application knows which user is trying to authenticate, it can use this parameter to provide a hint to the Google Authentication Server.
-                
+
                 * The server uses the hint to simplify the login flow either by prefilling the email field in the sign-in form or by selecting the appropriate multi-login session.
 
                 * Set the parameter value to an email address or sub identifier, which is equivalent to the user's Google ID.
@@ -852,11 +868,11 @@ class OpenIdConnectManager(Oauth2Manager):
             prompt (str):
 
                 * Optional
-                
+
                 * A space-delimited, case-sensitive list of prompts to present the user.
-                
+
                 * If you don't specify this parameter, the user will be prompted only the first time your app requests access.
-                
+
                 * Possible values are:
 
                     * ``None`` : Default: Do not display any authentication or consent screens. Must not be specified with other values.
@@ -870,11 +886,11 @@ class OpenIdConnectManager(Oauth2Manager):
                 * Optional
 
                 * openid.realm is a parameter from the OpenID 2.0 protocol.
-                
+
                 * It is used in OpenID 2.0 requests to signify the URL-space for which an authentication request is valid.
-                
+
                 * Use openid.realm if you are migrating an existing application from OpenID 2.0 to OpenID Connect.
-                
+
                 * For more details, see Migrating off of OpenID 2.0. https://developers.google.com/identity/protocols/OpenID2Migration
 
             hd (str):
@@ -882,15 +898,15 @@ class OpenIdConnectManager(Oauth2Manager):
                 * Optional
 
                 * The hd (hosted domain) parameter streamlines the login process for G Suite hosted accounts.
-                
+
                 * By including the domain of the G Suite user (for example, mycollege.edu), you can indicate that the account selection UI should be optimized for accounts at that domain.
-                
+
                 * To optimize for G Suite accounts generally instead of just one domain, use an asterisk: hd=*.
 
                 * Don't rely on this UI optimization to control who can access your app, as client-side requests can be modified.
-                
+
                 * Be sure to validate that the returned ID token has an hd claim value that matches what you expect (e.g. mycolledge.edu).
-                
+
                 * Unlike the request parameter, the ID token claim is contained within a security token from Google, so the value can be trusted.
 
             response_type (str):
@@ -916,19 +932,19 @@ class OpenIdConnectManager(Oauth2Manager):
             * For a list of all of Google's available scopes: https://developers.google.com/identity/protocols/googlescopes
 
             * It is recommended that your application requests access to authorization scopes in context whenever possible.
-            
+
             * By requesting access to user data in context, via incremental authorization, you help users to more easily understand why your application needs the access it is requesting.
 
         Warning:
 
             * When listening for a callback after redirecting a user to the URL returned from this method, take the following into consideration:
-            
+
                 * If your response endpoint renders an HTML page, any resources on that page will be able to see the authorization code in the URL.
-                
+
                 * Scripts can read the URL directly, and the URL in the Referer HTTP header may be sent to any or all resources on the page.
 
                 * Carefully consider whether you want to send authorization credentials to all resources on that page (especially third-party scripts such as social plugins and analytics).
-                
+
                 * To avoid this issue, it's recommend that the server first handle the request, then redirect to another URL that doesn't include the response parameters.
 
         Example:
@@ -990,7 +1006,7 @@ class OpenIdConnectManager(Oauth2Manager):
     async def build_user_creds(
         self,
         grant,
-        client_creds=None,
+        client_creds: Union[ClientCreds, Mapping] = None,
         grant_type=AUTH_CODE_GRANT_TYPE,
         nonce=None,
         hd=None,
@@ -1002,9 +1018,9 @@ class OpenIdConnectManager(Oauth2Manager):
         Arguments:
 
             grant (str):
-            
-                * Aka: "code". 
-                
+
+                * Aka: "code".
+
                 * The code received at your redirect URI from the auth callback
 
             client_creds (aiogoogle.auth.creds.ClientCreds):
@@ -1142,8 +1158,8 @@ class ServiceAccountManager:
 
     def __init__(
         self,
-        session_factory=AiohttpSession,
-        creds=None
+        session_factory: Type[AbstractSession] = AiohttpSession,
+        creds: Union[ServiceAccountCreds, Mapping] = None
     ):
         self.session_factory = session_factory
         self.creds = creds or {}
